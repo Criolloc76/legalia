@@ -142,6 +142,29 @@ export default function ChatTest() {
             <button onClick={onSend} className="rounded px-4 py-2 bg-black text-white">
               Enviar
             </button>
+            <button
+              onClick={async () => {
+                if (!conversationId || !text.trim()) {
+                  setStatus('Crea conversación y escribe texto'); 
+                  return
+                }
+                setStatus('Llamando /api/chat/visible…')
+                const res = await fetch('/api/chat/visible', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ conversationId, userText: text })
+                })
+                const j = await res.json()
+                if (!res.ok) { setStatus(`Error API: ${j.error}`); return }
+                setText('')
+                setStatus('Mock recibido ✅')
+                await loadMessages(conversationId)
+              }}
+              className="rounded px-4 py-2 border"
+            >
+              Enviar vía API (mock)
+            </button>
+
           </div>
         </section>
       )}
