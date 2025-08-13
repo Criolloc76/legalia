@@ -1,28 +1,37 @@
-// app/api/whoami/route.ts
-import { NextResponse } from 'next/server'
-import { headers, cookies } from 'next/headers'
-import { supabaseServer } from '@/lib/supabase-server'
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-export const runtime = 'nodejs'           // en Vercel, Node runtime
-export const dynamic = 'force-dynamic'    // desactiva caché de ruta en prod
+import { NextResponse } from 'next/server'
+import { cookies, headers } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+// Si no tienes tipos de DB, quita "<Database>" o crea tu archivo de tipos.
+import type { Database } from '@/lib/types'
 
 export async function GET() {
   try {
-    const supabase = supabaseServer()
+    // En Next 15 son Promises:
+    const ck = await cookies()
+    const hdrs = await headers()
 
-    // sesión (si hay)
-    const { data, error } = await supabase.auth.getUser()
-    const user = data?.user ?? null
+    const supabase = createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: (name: string) => ck.get(name)?.value,
+          set: () => {},   // no persistimos desde aquí
+          remove: () => {},// no persistimos desde aquí
+        },
+      }
+    )
 
-    const hdrs = headers()
-    const ck = cookies()
+    const { data: { user }, error } = await supabase.auth.getUser()
 
     return NextResponse.json({
       ok: true,
       hasSession: !!user,
-      user: user
-        ? { id: user.id, email: user.email, aud: user.aud }
-        : null,
+      user: user ? { id: user.id, email: user.email } : null,
+      error: error?.message ?? null,
       debug: {
         cookieKeys: ck.getAll().map(c => c.name),
         host: hdrs.get('host'),
@@ -31,7 +40,7 @@ export async function GET() {
       },
     })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'unexpected'
+    const msg = e instanceof Error ? e.message : 'unknown'
     return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 }
