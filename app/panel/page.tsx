@@ -1,9 +1,7 @@
 // app/panel/page.tsx
 import { supabaseServer } from '@/lib/supabase-server'
-import { redirect } from 'next/navigation'
 
-type LeadObj = { name: string | null }
-type EnrichmentRow = {
+type RawRow = {
   id: string
   created_at: string
   lead_id: string
@@ -12,104 +10,118 @@ type EnrichmentRow = {
   keywords: string[] | null
   jurisdiction: string | null
   amount_estimate: number | null
-  urgency: 'alta' | 'media' | 'baja' | null
+  urgency: string | null
   facts: string | null
-  // Supabase a veces devuelve objeto y a veces array si la relación no está configurada;
-  // lo tipamos como unión para ser tolerantes:
-  leads: LeadObj | LeadObj[] | null
+  // relación con leads: viene como un array de objetos con { name }
+  leads?: { name: string | null }[] | null
 }
 
-export default async function Panel() {
+type EnrichmentRow = {
+  id: string
+  created_at: string
+  lead_id: string
+  lead_name: string | null
+  area: string | null
+  subtopic: string | null
+  keywords: string[] | null
+  jurisdiction: string | null
+  amount_estimate: number | null
+  urgency: string | null
+  facts: string | null
+}
+
+export default async function PanelPage() {
   const supabase = supabaseServer()
 
-  // 1) Requiere sesión
-  const { data: auth } = await supabase.auth.getUser()
-  if (!auth?.user) redirect('/auth')
-
-  // 2) Trae últimos 50 enriquecimientos (+ nombre del lead)
   const { data, error } = await supabase
     .from('enrichments')
-    .select(`
-      id, created_at, lead_id, area, subtopic, keywords, jurisdiction,
-      amount_estimate, urgency, facts,
-      leads:lead_id ( name )
-    `)
+    .select(
+      `
+      id,
+      created_at,
+      lead_id,
+      area,
+      subtopic,
+      keywords,
+      jurisdiction,
+      amount_estimate,
+      urgency,
+      facts,
+      leads ( name )
+    `
+    )
     .order('created_at', { ascending: false })
     .limit(50)
 
   if (error) {
     return (
-      <main className="max-w-5xl mx-auto p-6">
-        <h1 className="text-2xl font-semibold mb-4">Panel del abogado</h1>
+      <main className="max-w-4xl mx-auto p-6">
+        <h1 className="text-2xl font-semibold mb-4">Panel interno</h1>
         <p className="text-red-600">Error cargando datos: {error.message}</p>
       </main>
     )
   }
 
-  // Normaliza leads a un objeto (toma el primero si viene como array)
-  const rows: EnrichmentRow[] = (data ?? []).map((r: any) => {
-    const raw = r?.leads ?? null
-    const normalized: LeadObj | null = Array.isArray(raw) ? (raw[0] ?? null) : raw
-    return { ...r, leads: normalized }
-  })
+  // Tipamos sin usar `any`
+  const rows: EnrichmentRow[] = (data ?? []).map((r: RawRow) => ({
+    id: r.id,
+    created_at: r.created_at,
+    lead_id: r.lead_id,
+    lead_name:
+      Array.isArray(r.leads) && r.leads.length > 0
+        ? r.leads[0]?.name ?? null
+        : null,
+    area: r.area ?? null,
+    subtopic: r.subtopic ?? null,
+    keywords: r.keywords ?? null,
+    jurisdiction: r.jurisdiction ?? null,
+    amount_estimate: r.amount_estimate ?? null,
+    urgency: r.urgency ?? null,
+    facts: r.facts ?? null,
+  }))
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-4">
-      <h1 className="text-2xl font-semibold">Panel del abogado</h1>
-      <p className="text-sm opacity-70">
-        Sesión: {auth.user.email} — Enriquecimientos recientes ({rows.length})
-      </p>
+      <h1 className="text-2xl font-semibold">Panel interno</h1>
 
       <div className="overflow-x-auto border rounded">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-zinc-900">
+          <thead className="bg-gray-50">
             <tr className="text-left">
-              <th className="p-2">Fecha</th>
-              <th className="p-2">Lead</th>
-              <th className="p-2">Área / Subtema</th>
-              <th className="p-2">Urgencia</th>
-              <th className="p-2">Monto (COP)</th>
-              <th className="p-2">Jurisdicción</th>
-              <th className="p-2">Keywords</th>
-              <th className="p-2">Hechos</th>
+              <th className="px-3 py-2">Fecha</th>
+              <th className="px-3 py-2">Lead</th>
+              <th className="px-3 py-2">Área</th>
+              <th className="px-3 py-2">Subtema</th>
+              <th className="px-3 py-2">Urgencia</th>
+              <th className="px-3 py-2">Jurisdicción</th>
+              <th className="px-3 py-2">Cuantía</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td className="p-3 text-center opacity-60" colSpan={8}>
-                  Aún no hay enriquecimientos. Envía un mensaje desde /chat-test.
+                <td className="px-3 py-3" colSpan={7}>
+                  Sin datos todavía.
                 </td>
               </tr>
             ) : (
-              rows.map((r) => {
-                const leadName =
-                  (r.leads && !Array.isArray(r.leads) && r.leads.name) ||
-                  (Array.isArray(r.leads) && r.leads[0]?.name) ||
-                  '(sin nombre)'
-                return (
-                  <tr key={r.id} className="border-t align-top">
-                    <td className="p-2 whitespace-nowrap">
-                      {new Date(r.created_at).toLocaleString()}
-                    </td>
-                    <td className="p-2">
-                      {leadName}{' '}
-                      <span className="opacity-60 text-xs">({r.lead_id.slice(0, 8)})</span>
-                    </td>
-                    <td className="p-2">
-                      <div className="font-medium">{r.area ?? '—'}</div>
-                      <div className="opacity-70">{r.subtopic ?? ''}</div>
-                    </td>
-                    <td className="p-2 capitalize">{r.urgency ?? '—'}</td>
-                    <td className="p-2">{r.amount_estimate ?? '—'}</td>
-                    <td className="p-2">{r.jurisdiction ?? '—'}</td>
-                    <td className="p-2">{(r.keywords ?? []).join(', ') || '—'}</td>
-                    <td className="p-2 max-w-[28rem]">
-                      <div className="line-clamp-3">{r.facts ?? '—'}</div>
-                    </td>
-                  </tr>
-                )
-              })
+              rows.map((row) => (
+                <tr key={row.id} className="border-t">
+                  <td className="px-3 py-2">
+                    {new Date(row.created_at).toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.lead_name ?? row.lead_id.slice(0, 8)}
+                  </td>
+                  <td className="px-3 py-2">{row.area ?? '—'}</td>
+                  <td className="px-3 py-2">{row.subtopic ?? '—'}</td>
+                  <td className="px-3 py-2">{row.urgency ?? '—'}</td>
+                  <td className="px-3 py-2">{row.jurisdiction ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    {row.amount_estimate ?? '—'}
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
