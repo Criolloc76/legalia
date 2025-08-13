@@ -1,27 +1,37 @@
-// lib/supabase-server.ts
-import { cookies } from 'next/headers'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+// Server-side Supabase client (Next.js App Router / Route Handlers)
+import { cookies, headers } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 
 export function supabaseServer() {
-  const cookieStore = cookies()
+  const ck = cookies();     // ¡OJO! NO usar "await cookies()"
+  const hdrs = headers();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Manejo de cookies compatible con Next 14/15
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        getAll() {
+          // ck es ReadonlyRequestCookies
+          return ck.getAll();
         },
-        set(name: string, value: string, options: CookieOptions) {
-          // API compatible con Next 13/14/15: firma set(name, value, options)
-          cookieStore.set(name, value, options)
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              ck.set(name, value, options);
+            });
+          } catch {
+            // silencioso (en edge puede fallar set)
+          }
         },
-        remove(name: string, options: CookieOptions) {
-          // Borrar cookie: set con maxAge: 0
-          cookieStore.set(name, '', { ...options, maxAge: 0 })
+      },
+      headers: {
+        // opcional: útil si activas RLS con session from headers
+        get(key: string) {
+          return hdrs.get(key);
         },
       },
     }
-  )
+  );
 }
